@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clinical LLM Tool</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #7c8cf8;
+      letter-spacing: 0.02em;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    select {
+      background: #252836;
+      border: 1px solid #3d4266;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      transition: background 0.3s;
+    }
+    .status-dot.connected { background: #22c55e; }
+
+    .status-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    /* Prompt presets */
+    .presets-bar {
+      background: #161824;
+      border-bottom: 1px solid #2d3148;
+      padding: 8px 20px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-btn {
+      background: #252836;
+      border: 1px solid #3d4266;
+      color: #94a3b8;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .preset-btn:hover {
+      border-color: #7c8cf8;
+      color: #7c8cf8;
+    }
+
+    /* Main layout */
+    main {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      overflow: hidden;
+    }
+
+    /* Left panel - context */
+    .context-panel {
+      background: #161824;
+      border-right: 1px solid #2d3148;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 12px 16px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #2d3148;
+    }
+
+    .upload-area {
+      margin: 12px;
+      border: 2px dashed #3d4266;
+      border-radius: 8px;
+      padding: 20px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.82rem;
+      color: #64748b;
+    }
+    .upload-area:hover, .upload-area.dragging {
+      border-color: #7c8cf8;
+      color: #7c8cf8;
+      background: rgba(124, 140, 248, 0.05);
+    }
+
+    #fileInput { display: none; }
+
+    .file-info {
+      margin: 0 12px;
+      padding: 10px 12px;
+      background: #252836;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      display: none;
+    }
+    .file-info.visible { display: block; }
+    .file-info .file-name { color: #7c8cf8; font-weight: 500; word-break: break-all; }
+    .file-info .file-meta { color: #64748b; font-size: 0.72rem; margin-top: 4px; }
+
+    .context-text {
+      flex: 1;
+      margin: 12px;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.78rem;
+      color: #94a3b8;
+      resize: none;
+      overflow-y: auto;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+
+    .clear-context {
+      margin: 0 12px 12px;
+      padding: 7px;
+      background: transparent;
+      border: 1px solid #3d4266;
+      color: #64748b;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: calc(100% - 24px);
+      transition: all 0.2s;
+    }
+    .clear-context:hover { border-color: #ef4444; color: #ef4444; }
+
+    /* Chat panel */
+    .chat-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      max-width: 85%;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .message.user { align-self: flex-end; }
+    .message.assistant { align-self: flex-start; }
+
+    .message-bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.88rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message.user .message-bubble {
+      background: #3730a3;
+      color: #e0e7ff;
+      border-bottom-right-radius: 3px;
+    }
+
+    .message.assistant .message-bubble {
+      background: #1e2130;
+      color: #e2e8f0;
+      border: 1px solid #2d3148;
+      border-bottom-left-radius: 3px;
+    }
+
+    .message-role {
+      font-size: 0.7rem;
+      color: #475569;
+      margin-bottom: 4px;
+      padding: 0 4px;
+    }
+    .message.user .message-role { text-align: right; }
+
+    .thinking {
+      display: flex;
+      gap: 4px;
+      padding: 14px 16px;
+    }
+    .thinking span {
+      width: 6px;
+      height: 6px;
+      background: #7c8cf8;
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+    .thinking span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* Input area */
+    .input-area {
+      padding: 12px 20px 16px;
+      border-top: 1px solid #2d3148;
+      background: #161824;
+    }
+
+    .input-wrapper {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      background: #252836;
+      border: 1px solid #3d4266;
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: border-color 0.2s;
+    }
+    .input-wrapper:focus-within { border-color: #7c8cf8; }
+
+    #userInput {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: none;
+      line-height: 1.5;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    #userInput::placeholder { color: #475569; }
+
+    #sendBtn {
+      background: #7c8cf8;
+      border: none;
+      color: white;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.2s;
+      font-size: 1rem;
+    }
+    #sendBtn:hover { background: #6366f1; }
+    #sendBtn:disabled { background: #334155; cursor: not-allowed; }
+
+    .hint {
+      font-size: 0.7rem;
+      color: #334155;
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3d4266; border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Clinical LLM Tool</h1>
+  <div class="header-controls">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-label" id="statusLabel">Connecting...</span>
+    <select id="modelSelect">
+      <option value="">Loading models...</option>
+    </select>
+  </div>
+</header>
+
+<div class="presets-bar">
+  <button class="preset-btn" data-prompt="Resume este documento clínico en formato SOAP (Subjetivo, Objetivo, Análisis, Plan):">Formato SOAP</button>
+  <button class="preset-btn" data-prompt="Lista los hallazgos principales, diagnóstico diferencial y recomendaciones terapéuticas del siguiente texto:">Diagnóstico diferencial</button>
+  <button class="preset-btn" data-prompt="Extrae los medicamentos, dosis y vía de administración mencionados en el siguiente texto:">Extraer medicamentos</button>
+  <button class="preset-btn" data-prompt="Traduce este informe clínico al inglés manteniendo la terminología médica correcta:">Traducir informe</button>
+  <button class="preset-btn" data-prompt="Simplifica este texto médico para que lo entienda un paciente sin formación médica:">Simplificar para paciente</button>
+  <button class="preset-btn" data-prompt="Identifica posibles errores, omisiones o inconsistencias en el siguiente documento clínico:">Revisar documento</button>
+</div>
+
+<main>
+  <!-- Context panel -->
+  <div class="context-panel">
+    <div class="panel-title">Contexto / Documento</div>
+
+    <div class="upload-area" id="uploadArea">
+      <div style="font-size:1.5rem;margin-bottom:6px;">📄</div>
+      Arrastra un PDF o TXT<br/>o haz clic para seleccionar
+      <input type="file" id="fileInput" accept=".pdf,.txt,.md" />
+    </div>
+
+    <div class="file-info" id="fileInfo">
+      <div class="file-name" id="fileName"></div>
+      <div class="file-meta" id="fileMeta"></div>
+    </div>
+
+    <textarea
+      class="context-text"
+      id="contextText"
+      placeholder="El texto del documento aparecerá aquí. También puedes escribir o pegar contexto directamente..."
+    ></textarea>
+
+    <button class="clear-context" id="clearContext">Limpiar contexto</button>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel">
+    <div class="messages" id="messages">
+      <div class="message assistant">
+        <div class="message-role">Asistente clínico</div>
+        <div class="message-bubble">Hola. Soy tu asistente clínico local. Puedes cargar un documento (PDF o TXT) en el panel izquierdo y luego hacerme preguntas sobre él, o usar los atajos rápidos de arriba.<br/><br/>Toda la inferencia ocurre en tu GPU local — sin datos en la nube.</div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea
+          id="userInput"
+          rows="1"
+          placeholder="Escribe tu pregunta aquí... (Enter para enviar, Shift+Enter para nueva línea)"
+        ></textarea>
+        <button id="sendBtn" title="Enviar">&#9650;</button>
+      </div>
+      <div class="hint">Modelo local via Ollama &mdash; GPU NVIDIA &mdash; sin conexión a internet</div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const messagesEl = document.getElementById('messages');
+  const userInput = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const modelSelect = document.getElementById('modelSelect');
+  const statusDot = document.getElementById('statusDot');
+  const statusLabel = document.getElementById('statusLabel');
+  const contextText = document.getElementById('contextText');
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInfo = document.getElementById('fileInfo');
+  const fileName = document.getElementById('fileName');
+  const fileMeta = document.getElementById('fileMeta');
+  const clearContext = document.getElementById('clearContext');
+
+  let conversationHistory = [];
+
+  // Auto-resize textarea
+  userInput.addEventListener('input', () => {
+    userInput.style.height = 'auto';
+    userInput.style.height = Math.min(userInput.scrollHeight, 150) + 'px';
+  });
+
+  // Enter to send
+  userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+
+  // Load models on startup
+  async function loadModels() {
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      modelSelect.innerHTML = data.models.map(m =>
+        `<option value="${m}">${m}</option>`
+      ).join('');
+      statusDot.classList.add('connected');
+      statusLabel.textContent = 'Ollama conectado';
+    } catch (err) {
+      modelSelect.innerHTML = '<option value="llama3">llama3 (default)</option>';
+      statusDot.classList.remove('connected');
+      statusLabel.textContent = 'Ollama desconectado';
+    }
+  }
+
+  // File upload
+  uploadArea.addEventListener('click', () => fileInput.click());
+
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragging');
+  });
+
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragging'));
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragging');
+    const file = e.dataTransfer.files[0];
+    if (file) uploadFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+  });
+
+  async function uploadFile(file) {
+    uploadArea.textContent = 'Procesando...';
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      contextText.value = data.text;
+      fileName.textContent = data.filename;
+      fileMeta.textContent = `${data.word_count.toLocaleString()} palabras · ${data.char_count.toLocaleString()} caracteres`;
+      fileInfo.classList.add('visible');
+    } catch (err) {
+      alert('Error al procesar el archivo: ' + err.message);
+    } finally {
+      uploadArea.innerHTML = '<div style="font-size:1.5rem;margin-bottom:6px;">📄</div>Arrastra un PDF o TXT<br/>o haz clic para seleccionar<input type="file" id="fileInput" accept=".pdf,.txt,.md" />';
+      document.getElementById('fileInput').addEventListener('change', () => {
+        if (document.getElementById('fileInput').files[0])
+          uploadFile(document.getElementById('fileInput').files[0]);
+      });
+    }
+  }
+
+  clearContext.addEventListener('click', () => {
+    contextText.value = '';
+    fileInfo.classList.remove('visible');
+    fileName.textContent = '';
+    fileMeta.textContent = '';
+  });
+
+  // Preset prompts
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      userInput.value = btn.dataset.prompt + '\n\n';
+      userInput.dispatchEvent(new Event('input'));
+      userInput.focus();
+    });
+  });
+
+  function appendMessage(role, content) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${role}`;
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'message-role';
+    roleLabel.textContent = role === 'user' ? 'Tú' : 'Asistente clínico';
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.textContent = content;
+    wrapper.appendChild(roleLabel);
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return bubble;
+  }
+
+  function showThinking() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message assistant';
+    wrapper.id = 'thinking';
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'message-role';
+    roleLabel.textContent = 'Asistente clínico';
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble thinking';
+    bubble.innerHTML = '<span></span><span></span><span></span>';
+    wrapper.appendChild(roleLabel);
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return wrapper;
+  }
+
+  async function sendMessage() {
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    const model = modelSelect.value || 'llama3';
+    const context = contextText.value.trim();
+
+    // Build user message, prepend context if present
+    let userContent = text;
+    if (context) {
+      userContent = `CONTEXTO DEL DOCUMENTO:\n"""\n${context}\n"""\n\nPREGUNTA: ${text}`;
+    }
+
+    appendMessage('user', text);
+    conversationHistory.push({ role: 'user', content: userContent });
+
+    userInput.value = '';
+    userInput.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    const thinkingEl = showThinking();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: conversationHistory,
+          stream: false,
+        }),
+      });
+
+      const data = await res.json();
+      thinkingEl.remove();
+
+      if (data.error) {
+        appendMessage('assistant', 'Error: ' + data.error);
+        conversationHistory.pop();
+        return;
+      }
+
+      const assistantContent = data.message?.content || 'Sin respuesta';
+      appendMessage('assistant', assistantContent);
+      conversationHistory.push({ role: 'assistant', content: assistantContent });
+
+    } catch (err) {
+      thinkingEl.remove();
+      appendMessage('assistant', 'Error de conexión: ' + err.message);
+      conversationHistory.pop();
+    } finally {
+      sendBtn.disabled = false;
+      userInput.focus();
+    }
+  }
+
+  loadModels();
+  setInterval(loadModels, 30000); // Re-check connection every 30s
+</script>
+
+</body>
+</html>
